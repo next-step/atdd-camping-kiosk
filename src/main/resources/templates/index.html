@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Kiosk</title>
+    <link rel="stylesheet" href="/css/kiosk.css"/>
+    <style>
+        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; }
+        .modal.hidden { display: none; }
+        .hidden { display: none; }
+        .modal-content { background: #fff; padding: 16px; border-radius: 8px; width: 320px; max-width: 90%; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+        .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+        .controls { display: flex; justify-content: flex-end; align-items: center; gap: 12px; }
+        .cart-card { background: #fff; border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px; box-shadow: 0 6px 16px rgba(0,0,0,0.06); }
+        .cart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .cart-empty { padding: 12px; color: var(--color-dimmed); text-align: center; }
+        .cart-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--color-border); }
+        .product-card { display: flex; flex-direction: column; gap: 8px; }
+        .product-row { display: flex; justify-content: space-between; align-items: center; }
+        .product-meta { color: var(--color-dimmed); font-size: 14px; }
+        .product-actions { display: flex; justify-content: flex-end; }
+    </style>
+    <script>
+        const cart = [];
+        function addToCart(id, name, price) {
+            const found = cart.find(i => i.productId === id);
+            if (found) { found.quantity += 1; }
+            else { cart.push({ productId: id, productName: name, unitPrice: price, quantity: 1 }); }
+            renderCart();
+        }
+        function renderCart() {
+            const tbody = document.getElementById('cart-body');
+            tbody.innerHTML = '';
+            let sum = 0;
+            cart.forEach(i => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${i.productName}</td><td>${i.unitPrice}</td><td><input type="number" min="1" value="${i.quantity}" onchange="onQtyChange(${i.productId}, this.value)"></td><td>${i.unitPrice * i.quantity}</td><td><button class="btn btn-secondary" onclick="removeFromCart(${i.productId})">제거</button></td>`;
+                tbody.appendChild(tr);
+                sum += i.unitPrice * i.quantity;
+            });
+            document.getElementById('sum').innerText = sum;
+            let emptyEl = document.getElementById('cart-empty');
+            if (!emptyEl) {
+                emptyEl = document.createElement('tr');
+                emptyEl.id = 'cart-empty';
+                emptyEl.innerHTML = '<td class="cart-empty" colspan="5">선택된 상품이 없습니다.</td>';
+                tbody.appendChild(emptyEl);
+            }
+            if (cart.length === 0) {
+                emptyEl.classList.remove('hidden');
+            } else {
+                emptyEl.classList.add('hidden');
+            }
+        }
+        function onQtyChange(id, v) {
+            const found = cart.find(i => i.productId === id);
+            if (found) { found.quantity = parseInt(v); renderCart(); }
+        }
+        let pendingPayment = null;
+        async function createPayment() {
+            const res = await fetch('/api/payments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: cart, paymentMethod: 'CARD' }) });
+            const body = await res.json();
+            if (!body.success) {
+                alert(`실패: ${body.message}`);
+                return;
+            }
+            pendingPayment = body;
+            const sum = cart.reduce((s, i) => s + (i.unitPrice * i.quantity), 0);
+            document.getElementById('confirm-amount').innerText = sum;
+            document.getElementById('confirmModal').classList.remove('hidden');
+        }
+
+        function openConfirm() { if (cart.length === 0) { alert('선택된 상품이 없습니다.'); return; } createPayment(); }
+
+        function closeConfirm() {
+            document.getElementById('confirmModal').classList.add('hidden');
+        }
+
+        async function confirmCheckout() {
+            if (!pendingPayment) { alert('결제 생성 정보가 없습니다.'); return; }
+            const res = await fetch('/api/payments/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paymentKey: pendingPayment.paymentKey, orderId: pendingPayment.orderId, items: cart }) });
+            const body = await res.json();
+            closeConfirm();
+            if (body.success) {
+                alert(`성공: ${body.transactionId}, 금액:${body.paidAmount}`);
+                cart.length = 0; renderCart(); pendingPayment = null;
+                window.location.reload();
+            } else {
+                alert(`실패: ${body.message}`);
+            }
+        }
+        function removeFromCart(id) {
+            const idx = cart.findIndex(i => i.productId === id);
+            if (idx >= 0) { cart.splice(idx, 1); renderCart(); }
+        }
+        window.addEventListener('DOMContentLoaded', renderCart);
+    </script>
+    </head>
+<body>
+<h1 class="title">매점 키오스크</h1>
+<div class="container">
+    <div class="cart-card">
+        <div class="cart-header">
+            <h2>선택한 상품 목록</h2>
+        </div>
+        <div class="cart">
+            <table>
+                <thead>
+                    <tr>
+                        <th>상품</th>
+                        <th>가격</th>
+                        <th>수량</th>
+                        <th>소계</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="cart-body">
+                    <tr id="cart-empty"><td colspan="5">선택된 상품이 없습니다.</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="cart-footer">
+            <span class="summary">합계 <strong id="sum">0</strong></span>
+            <div class="controls">
+                <button class="btn btn-primary" onclick="openConfirm()">결제하기</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="spacer"></div>
+    <h2>상품 목록</h2>
+    <div class="grid">
+        <div th:each="p : ${products}" class="card product-card">
+            <div class="product-row">
+                <div>
+                    <b th:text="${p.name}"></b>
+                    <span th:if="${p.productType == 'RENTAL'}" style="color: red; font-weight: bold;">(대여)</span>
+                </div>
+                <span class="product-meta">재고: <span th:text="${p.stockQuantity}"></span></span>
+            </div>
+            <div class="product-row">
+                <span>가격: <span th:text="${p.price}"></span></span>
+                <div class="product-actions">
+                    <button class="btn btn-secondary" th:attr="onclick=|addToCart(${p.id}, '${p.name}', ${p.price})|">담기</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="confirmModal" class="modal hidden">
+    <div class="modal-content">
+        <h3>결제 확인</h3>
+        <p>결제 금액: <strong id="confirm-amount">0</strong>원</p>
+        <div class="modal-actions">
+            <button class="btn btn-secondary" onclick="closeConfirm()">취소</button>
+            <button class="btn btn-primary" onclick="confirmCheckout()">결제 진행</button>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>
+
+

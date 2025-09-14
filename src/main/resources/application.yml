@@ -1,0 +1,30 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: kiosk
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+
+kiosk:
+  admin:
+    base-url: http://localhost:8080
+    auth:
+      username: admin
+      password: admin123
+      login-path: /auth/login
+      cookie-name: AUTH_TOKEN
+  payment:
+    base-url: http://localhost:9090
+    secret-key: ${PAYMENTS_SECRET_KEY:test_sk_dummy}
+  discount:
+    percent: 10
+
+logging:
+  level:
+    root: INFO
+
+
